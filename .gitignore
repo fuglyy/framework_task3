@@ -1,0 +1,17 @@
+.env
+tmp.env.add
+
+/services/rust-iss/target/
+/services/rust-iss/.cargo/
+*.iml
+
+/services/php-web/vendor/
+/services/php-web/storage/
+/services/php-web/node_modules/
+.env.testing
+
+*.sublime-*
+*.code-workspace
+*.vscode/
+
+/tmp/
