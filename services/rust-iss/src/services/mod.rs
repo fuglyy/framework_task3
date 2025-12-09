@@ -1,7 +1,3 @@
-pub mod iss_service;
-pub mod osdr_service;
-pub mod space_cache_service;
+pub mod space_service;
 
-// Публичный ре-экспорт (для handler layer)
-pub use iss_service::*;
-pub use osdr_service::*;
+pub use space_service::{new_space_service, SpaceService};

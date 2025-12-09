@@ -37,7 +37,9 @@ pub async fn calculate_trend(pool: &PgPool) -> Result<Trend, AppError> {
         return Ok(Trend {
             movement: false, delta_km: 0.0, dt_sec: 0.0, velocity_kmh: None,
             from_time: None, to_time: None,
-            from_lat: None, from_lon: None, to_lat: None, to_lon: None
+            from_lat: None, from_lon: None, to_lat: None, to_lon: None,
+            message: "calculated successfully".to_string(), // ДОБАВЬТЕ
+            status: "ok".to_string(), 
         });
     }
 
@@ -68,6 +70,8 @@ pub async fn calculate_trend(pool: &PgPool) -> Result<Trend, AppError> {
         from_time: Some(t1),
         to_time: Some(t2),
         from_lat: lat1, from_lon: lon1, to_lat: lat2, to_lon: lon2,
+        message: "calculated successfully".to_string(), // ДОБАВЬТЕ ЗДЕСЬ ТОЖЕ
+        status: "ok".to_string(),
     })
 }
 

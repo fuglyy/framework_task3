@@ -15,6 +15,8 @@ pub fn load_config() -> Result<AppConfig, AppError> {
     // Обновленное имя переменной
     let fallback_iss_url = std::env::var("WHERE_ISS_URL")
         .unwrap_or_else(|_| "https://api.wheretheiss.at/v1/satellites/25544".to_string());
+    
+    let redis_url = std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://localhost:6379".to_string());
 
     let every_osdr = env_u64("FETCH_EVERY_SECONDS", 600);
     let every_iss = env_u64("ISS_EVERY_SECONDS", 120);
@@ -26,6 +28,7 @@ pub fn load_config() -> Result<AppConfig, AppError> {
     Ok(AppConfig {
         nasa_url,
         nasa_key,
+        redis_url,
         fallback_iss_url, // Использовать новое имя
         every_osdr,
         every_iss,

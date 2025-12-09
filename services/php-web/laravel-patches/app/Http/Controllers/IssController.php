@@ -2,18 +2,32 @@
 
 namespace App\Http\Controllers;
 
+use Illuminate\Http\Request;
+use App\Services\IssService; // Подключаем новый Service Layer
+
+/**
+ * IssController: "Тонкий" контроллер.
+ * Вся логика работы с Rust API перенесена в IssService.
+ */
 class IssController extends Controller
 {
+    private IssService $issService;
+
+    // Dependency Injection: Laravel автоматически внедрит IssService
+    public function __construct(IssService $issService)
+    {
+        $this->issService = $issService;
+    }
+
     public function index()
     {
-        $base = getenv('RUST_BASE') ?: 'http://rust_iss:3000';
-
-        $last  = @file_get_contents($base.'/last');
-        $trend = @file_get_contents($base.'/iss/trend');
-
-        $lastJson  = $last  ? json_decode($last,  true) : [];
-        $trendJson = $trend ? json_decode($trend, true) : [];
-
-        return view('iss', ['last' => $lastJson, 'trend' => $trendJson, 'base' => $base]);
+        // 1. Вызов Service Layer для получения агрегированных данных.
+        $data = $this->issService->getIssDataForPage();
+        
+        // 2. Если в данных есть ошибка, можно перенаправить или показать заглушку.
+        // В данном случае, Service уже вернул Fallback Data (пустые или из кэша).
+        
+        // 3. Возврат представления с готовыми ViewModel/DTO.
+        return view('iss', $data);
     }
 }

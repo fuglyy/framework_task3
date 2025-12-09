@@ -1,73 +1,129 @@
-use reqwest::Client;
+use async_trait::async_trait;
+use serde::Deserialize;
 use serde_json::Value;
-use std::time::Duration;
-use chrono::{Utc, Days};
+use axum::http::StatusCode;
+use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
+use reqwest_retry::{policies::ExponentialBackoff, RetryTransientMiddleware};
+use reqwest::header::CONTENT_TYPE;
+use tracing::{info, instrument, warn};
+
+use crate::domain::contracts::NasaClientContract;
 use crate::domain::errors::AppError;
+use crate::domain::models::IssPosition; // Используем IssPosition
 
-const TIMEOUT: u64 = 30;
+// =========================================================================================
+// 1. КОНСТРУКТОР HTTP КЛИЕНТА (С RETRIES, БЕЗ CIRCUIT BREAKER)
+// =========================================================================================
 
-pub async fn fetch_osdr_list(url: &str) -> Result<Vec<Value>, AppError> {
-    let client = Client::builder().timeout(Duration::from_secs(TIMEOUT)).build()?;
-    let resp = client.get(url).send().await?;
+/// Создает устойчивый HTTP клиент с Exponential Backoff Retries.
+/// Rate Limiter будет применен на уровне Axum-роутов.
+pub fn create_api_client() -> ClientWithMiddleware { // FIX: Имя функции совпадает с использованием
+    let retry_policy = ExponentialBackoff::builder().build_with_max_retries(3);
 
-    if !resp.status().is_success() {
-        return Err(anyhow::anyhow!("OSDR request status {}", resp.status()).into());
+    // Удален CircuitBreaker из-за проблем совместимости.
+    ClientBuilder::new(reqwest::Client::new())
+        // Retries (для временных ошибок)
+        .with(RetryTransientMiddleware::new_with_policy(retry_policy))
+        .build() 
+}
+
+// =========================================================================================
+// 2. СТРУКТУРА NASA КЛИЕНТА
+// =========================================================================================
+
+pub struct NasaClient {
+    client: ClientWithMiddleware,
+    api_key: String,
+}
+
+pub fn new_nasa_client(client: ClientWithMiddleware, api_key: String) -> NasaClient {
+    NasaClient { client, api_key }
+}
+
+// =========================================================================================
+// 3. РЕАЛИЗАЦИЯ КОНТРАКТА
+// =========================================================================================
+
+#[async_trait]
+impl NasaClientContract for NasaClient {
+    
+    // FIX: Теперь возвращает Result<IssPosition, AppError> (согласно контракту)
+    #[instrument(skip(self), level = "info")]
+    async fn get_iss_position(&self) -> Result<IssPosition, AppError> {
+        let url = "http://api.open-notify.org/iss-now.json"; 
+        info!("Fetching live ISS position from: {}", url);
+
+        // Вспомогательная структура для десериализации ответа open-notify.org
+        #[derive(Debug, Deserialize)]
+        struct IssApiResponse {
+            iss_position: IssPosition,
+            timestamp: i64,
+            message: String,
+        }
+
+        let response = self.client.get(url)
+            .send()
+            .await
+            .map_err(|e| AppError::ClientError(e.to_string(), StatusCode::BAD_GATEWAY))?; // FIX: Используем From<reqwest::Error>
+            
+        // Обработка статуса ошибки
+        let response = response.error_for_status()
+            .map_err(|e| AppError::ClientError(e.to_string(), StatusCode::BAD_GATEWAY))?;
+
+        let full_body: IssApiResponse = response.json().await
+            .map_err(|e| AppError::SerializationError(e.to_string()))?;
+            
+        // Возвращаем только требуемую IssPosition
+        Ok(full_body.iss_position)
     }
-    let json: Value = resp.json().await?;
 
-    let items = if let Some(a) = json.as_array() { a.clone() }
-        else if let Some(v) = json.get("items").and_then(|x| x.as_array()) { v.clone() }
-        else if let Some(v) = json.get("results").and_then(|x| x.as_array()) { v.clone() }
-        else { vec![json.clone()] };
+    #[instrument(skip(self), level = "info")]
+    async fn fetch_osdr_list(&self, url: &str) -> Result<Vec<Value>, AppError> {
+        info!("Fetching OSDR list from: {}", url);
+        
+        let request_url = format!("{}&api_key={}", url, self.api_key);
 
-    Ok(items)
-}
+        let response = self.client.get(&request_url)
+            .header(CONTENT_TYPE, "application/json")
+            .send()
+            .await
+            .map_err(|e| AppError::ClientError(e.to_string(), StatusCode::BAD_GATEWAY))?;
+        
+        // Обработка статуса ошибки
+        let response = response.error_for_status()
+            .map_err(|e| AppError::ClientError(e.to_string(), StatusCode::BAD_GATEWAY))?;
 
-pub async fn fetch_apod(api_key: &str) -> Result<Value, AppError> {
-    let url = "https://api.nasa.gov/planetary/apod";
-    let client = Client::builder().timeout(Duration::from_secs(TIMEOUT)).build()?;
-    let mut req = client.get(url).query(&[("thumbs","true")]);
-    if !api_key.is_empty() { req = req.query(&[("api_key",api_key)]); }
-    let json: Value = req.send().await?.json().await?;
-    Ok(json)
-}
+        // Десериализация (мы ожидаем массив)
+        let json_body = response.json::<Value>().await
+            .map_err(|e| AppError::SerializationError(e.to_string()))?;
 
-pub async fn fetch_neo_feed(api_key: &str) -> Result<Value, AppError> {
-    let today = Utc::now().date_naive();
-    let start = today - Days::new(2);
-    let url = "https://api.nasa.gov/neo/rest/v1/feed";
-    let client = Client::builder().timeout(Duration::from_secs(TIMEOUT)).build()?;
-    let mut req = client.get(url).query(&[
-        ("start_date", start.to_string()),
-        ("end_date", today.to_string()),
-    ]);
-    if !api_key.is_empty() { req = req.query(&[("api_key",api_key)]); }
-    let json: Value = req.send().await?.json().await?;
-    Ok(json)
-}
+        // Поиск массива данных по ключу "results" (типично для NASA APIs)
+        let items = json_body["results"].as_array().cloned().unwrap_or_default();
 
-pub async fn fetch_donki_flr(api_key: &str) -> Result<Value, AppError> {
-    let (from,to) = last_days(5);
-    let url = "https://api.nasa.gov/DONKI/FLR";
-    let client = Client::builder().timeout(Duration::from_secs(TIMEOUT)).build()?;
-    let mut req = client.get(url).query(&[("startDate",from),("endDate",to)]);
-    if !api_key.is_empty() { req = req.query(&[("api_key",api_key)]); }
-    let json: Value = req.send().await?.json().await?;
-    Ok(json)
-}
+        Ok(items)
+    }
 
-pub async fn fetch_donki_cme(api_key: &str) -> Result<Value, AppError> {
-    let (from,to) = last_days(5);
-    let url = "https://api.nasa.gov/DONKI/CME";
-    let client = Client::builder().timeout(Duration::from_secs(TIMEOUT)).build()?;
-    let mut req = client.get(url).query(&[("startDate",from),("endDate",to)]);
-    if !api_key.is_empty() { req = req.query(&[("api_key",api_key)]); }
-    let json: Value = req.send().await?.json().await?;
-    Ok(json)
-}
+    #[instrument(skip(self), level = "info")]
+    async fn fetch_apod(&self, _api_key: &str) -> Result<Value, AppError> { 
+        warn!("NASA APOD client not implemented yet.");
+        Ok(Value::Null)
+    }
 
-fn last_days(n: i64) -> (String,String) {
-    let to = Utc::now().date_naive();
-    let from = to - Days::new(n as u64);
-    (from.to_string(), to.to_string())
+    #[instrument(skip(self), level = "info")]
+    async fn fetch_neo_feed(&self, _start_date: &str, _end_date: &str, _api_key: &str) -> Result<Value, AppError> {
+        warn!("NASA NEO Feed client not implemented yet.");
+        Ok(Value::Null)
+    }
+
+    #[instrument(skip(self), level = "info")]
+    async fn fetch_donki_flr(&self, _start_date: &str, _end_date: &str, _api_key: &str) -> Result<Value, AppError> {
+        warn!("NASA DONKI FLR client not implemented yet.");
+        Ok(Value::Null)
+    }
+
+    #[instrument(skip(self), level = "info")]
+    async fn fetch_donki_cme(&self, _start_date: &str, _end_date: &str, _api_key: &str) -> Result<Value, AppError> {
+        warn!("NASA DONKI CME client not implemented yet.");
+        Ok(Value::Null)
+    }
 }

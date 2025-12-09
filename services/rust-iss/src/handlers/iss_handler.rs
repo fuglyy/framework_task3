@@ -1,9 +1,12 @@
 use axum::{extract::State, Json};
 use serde_json::{json, Value};
+use tracing::warn;
 use crate::domain::models::{AppState, Health, Trend};
 use crate::domain::errors::AppError;
-use crate::services::{iss_service, space_cache_service};
 use chrono::Utc;
+
+// Импортируем функции из space_service
+use crate::services::space_service::{get_last_iss, get_iss_trend};
 
 // Общая ручка для health check
 pub async fn health_check() -> Json<Health> {
@@ -12,25 +15,23 @@ pub async fn health_check() -> Json<Health> {
 
 // Получение последней записи ISS
 pub async fn last_iss(State(st): State<AppState>) -> Result<Json<Value>, AppError> {
-    let log_opt = iss_service::get_last_iss(&st).await?;
-    let json_resp = log_opt.map(|log| json!({
-        "id": log.id, "fetched_at": log.fetched_at, "source_url": log.source_url, "payload": log.payload
-    })).unwrap_or(json!({"message":"no data"}));
-
+    let log_opt = get_last_iss(&st).await?;
+    let json_resp = log_opt.unwrap_or(json!({"message":"no data"}));
     Ok(Json(json_resp))
 }
 
 // Запуск принудительного фетча ISS
 pub async fn trigger_iss(State(st): State<AppState>) -> Result<Json<Value>, AppError> {
-    let log = iss_service::fetch_and_store_iss(&st).await?;
+    // Используем метод из сервиса
+    st.space_service.fetch_and_store_iss().await?;
     Ok(Json(json!({
-        "id": log.id, "fetched_at": log.fetched_at, "source_url": log.source_url, "payload": log.payload
+        "message": "ISS fetch triggered"
     })))
 }
 
 // Расчет тренда ISS
 pub async fn iss_trend(State(st): State<AppState>) -> Result<Json<Trend>, AppError> {
-    let trend = iss_service::get_iss_trend(&st).await?;
+    let trend = get_iss_trend(&st).await?;
     Ok(Json(trend))
 }
 
@@ -40,8 +41,7 @@ pub async fn space_latest(
     State(st): State<AppState>
 ) -> Result<Json<Value>, AppError> {
     use sqlx::Row;
-    use chrono::Utc;
-
+    
     let row = sqlx::query(
         "SELECT fetched_at, payload FROM space_cache
          WHERE source = $1 ORDER BY id DESC LIMIT 1"
@@ -63,19 +63,44 @@ pub async fn space_refresh(
     let sources_vec: Vec<String> = list.split(',')
         .map(|x| x.trim().to_lowercase())
         .filter(|x| !x.is_empty())
-        .collect(); // <--- Сохраняем владеющий вектор здесь
-
-    let sources: Vec<&str> = sources_vec.iter()
-        .map(|s| s.as_str())
         .collect();
-    let done = space_cache_service::refresh_cache(&st, &sources).await;
 
-    Ok(Json(json!({ "refreshed": done })))
+    let mut refreshed = 0;
+    
+    for source in sources_vec.iter() {
+        match source.as_str() {
+            "apod" => {
+                st.space_service.fetch_and_cache_apod().await?;
+                refreshed += 1;
+            }
+            "neo" => {
+                st.space_service.fetch_and_cache_neo().await?;
+                refreshed += 1;
+            }
+            "flr" | "cme" => {
+                st.space_service.fetch_and_cache_donki().await?;
+                refreshed += 1;
+            }
+            "spacex" => {
+                st.space_service.fetch_and_cache_spacex().await?;
+                refreshed += 1;
+            }
+            _ => warn!("Unknown source: {}", source),
+        }
+    }
+
+    Ok(Json(json!({ "refreshed": refreshed })))
 }
 
 pub async fn space_summary(State(st): State<AppState>) -> Result<Json<Value>, AppError> {
-    let osdr_count = crate::repo::osdr_repo::get_count(&st.pool).await.unwrap_or(0);
-    let summary = space_cache_service::get_summary(&st, osdr_count).await?;
-
-    Ok(Json(summary))
+    let osdr_count = st.osdr_repo.get_count().await.unwrap_or(0);
+    
+    // Получаем позицию МКС
+    let iss_position = st.space_service.get_iss_position().await.ok();
+    
+    Ok(Json(json!({
+        "osdr_count": osdr_count,
+        "iss_position": iss_position,
+        "status": "ok"
+    })))
 }

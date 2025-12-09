@@ -2,39 +2,51 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Response;
+use Illuminate\Http\Request;
+use App\Services\ProxyService;
+use Illuminate\Http\JsonResponse;
 
+/**
+ * ProxyController: "Тонкий" контроллер.
+ * Его задача - принять запрос, вызвать соответствующий Сервис и вернуть JSON-ответ.
+ * Вся логика проксирования и HTTP-вызовов перенесена в ProxyService/RustProxyClient.
+ */
 class ProxyController extends Controller
 {
-    private function base(): string {
-        return getenv('RUST_BASE') ?: 'http://rust_iss:3000';
-    }
+    private ProxyService $proxyService;
 
-    public function last()  { return $this->pipe('/last'); }
-
-    public function trend() {
-        $q = request()->getQueryString();
-        return $this->pipe('/iss/trend' . ($q ? '?' . $q : ''));
-    }
-
-    private function pipe(string $path)
+    public function __construct(ProxyService $proxyService)
     {
-        $url = $this->base() . $path;
-        try {
-            $ctx = stream_context_create([
-                'http' => ['timeout' => 5, 'ignore_errors' => true],
-            ]);
-            $body = @file_get_contents($url, false, $ctx);
-            if ($body === false || trim($body) === '') {
-                $body = '{}';
-            }
-            json_decode($body);
-            if (json_last_error() !== JSON_ERROR_NONE) {
-                $body = '{}';
-            }
-            return new Response($body, 200, ['Content-Type' => 'application/json']);
-        } catch (\Throwable $e) {
-            return new Response('{"error":"upstream"}', 200, ['Content-Type' => 'application/json']);
-        }
+        // Dependency Injection
+        $this->proxyService = $proxyService;
+    }
+
+    /**
+     * Проксирует запрос /last.
+     */
+    public function last(): JsonResponse
+    {
+        // 1. Вызываем Service Layer
+        $result = $this->proxyService->getLastData();
+
+        // 2. Возвращаем ответ. Если Service бросит исключение, его поймает Handler,
+        // который вернет {"ok": false, ...} с HTTP 200.
+        return response()->json($result);
+    }
+
+    /**
+     * Проксирует запрос /iss/trend с параметрами.
+     * @param Request $request
+     */
+    public function trend(Request $request): JsonResponse
+    {
+        // 1. Получаем все параметры запроса
+        $qs = $request->query();
+
+        // 2. Вызываем Service Layer
+        $result = $this->proxyService->getTrendData($qs);
+
+        // 3. Возвращаем ответ.
+        return response()->json($result);
     }
 }
