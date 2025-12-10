@@ -197,6 +197,6 @@ impl IntoResponse for AppError {
             error: error_detail,
         };
 
-        (status, Json(body)).into_response()
+        (StatusCode::OK, Json(body)).into_response()
     }
 }
