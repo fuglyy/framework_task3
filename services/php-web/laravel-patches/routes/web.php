@@ -11,6 +11,8 @@ Route::get('/osdr',      [\App\Http\Controllers\OsdrController::class,      'ind
 // Прокси к rust_iss
 Route::get('/api/iss/last',  [\App\Http\Controllers\ProxyController::class, 'last']);
 Route::get('/api/iss/trend', [\App\Http\Controllers\ProxyController::class, 'trend']);
+Route::get('/iss', [\App\Http\Controllers\DashboardController::class, 'issPage']);
+
 
 // JWST галерея (JSON)
 Route::get('/api/jwst/feed', [\App\Http\Controllers\DashboardController::class, 'jwstFeed']);
@@ -18,3 +20,11 @@ Route::get("/api/astro/events", [\App\Http\Controllers\AstroController::class, "
 use App\Http\Controllers\AstroController;
 Route::get('/page/{slug}', [\App\Http\Controllers\CmsController::class, 'page']);
 Route::get('/page/{slug}', [\App\Http\Controllers\CmsController::class, 'page']);
+
+Route::get('/jwst', [\App\Http\Controllers\DashboardController::class, 'jwstPage']);
+
+Route::get('/page/{slug}', [\App\Http\Controllers\CmsController::class, 'page']);
+
+
+Route::get('/astro', [\App\Http\Controllers\AstroController::class, 'index']);
+Route::get('/api/astro/events', [\App\Http\Controllers\AstroController::class, 'events']);

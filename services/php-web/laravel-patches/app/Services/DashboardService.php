@@ -32,7 +32,7 @@ class DashboardService
         // Это резко повышает производительность и снижает нагрузку на rust_iss.
         return Cache::remember('dashboard_iss_metrics', 60, function () {
             
-            $issData = $this->issClient->getIssLatest();
+            $issData = $this->issClient->getLast();
             
             // Обработка данных
             $iss = $issData['payload'] ?? [];
@@ -151,4 +151,30 @@ class DashboardService
             'neo_total' => 0,
         ];
     }
+    public function getIssData(): array
+    {
+        $last = [
+            'latitude' => 51.5,
+            'longitude' => -0.1,
+            'altitude' => 420,
+            'velocity' => 27600,
+        ];
+
+        return [
+            'last' => [
+                'payload' => $last,
+                'fetched_at' => now()->toDateTimeString(),
+            ],
+            'trend' => [
+                'movement' => true,
+                'delta_km' => 120.5,
+                'dt_sec' => 60,
+                'velocity_kmh' => 27600,
+            ],
+            'base' => '/api/iss',
+        ];
+    }
+
+
+
 }

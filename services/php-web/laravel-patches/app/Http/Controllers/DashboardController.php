@@ -48,4 +48,28 @@ class DashboardController extends Controller
         // 3. Возвращаем JSON-ответ
         return response()->json($result);
     }
+    public function jwstPage()
+    {
+        return view('jwst');
+    }
+
+    public function getIssData(): array
+    {
+        return [
+            'last'  => $this->issClient->getLast(),   // или как у тебя называется
+            'trend' => $this->issClient->getTrend(),
+            'base'  => '/api/iss',
+        ];
+    }
+
+    public function issPage()
+    {
+        $data = $this->dashboardService->getIssData();
+
+        return view('iss', $data);
+    }
+
+
+
+
 }

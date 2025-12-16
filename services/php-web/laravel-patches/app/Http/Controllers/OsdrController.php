@@ -22,24 +22,45 @@ class OsdrController extends Controller
 
     public function index(Request $request)
     {
-        // 1. Получаем и приводим к типу limit
-        $limit = (int) $request->query('limit', 20);
+        $limit = (int) $request->query('limit', 50); // кол-во элементов на страницу
+        $page  = max(1, (int) $request->query('page', 1));
+        $search = $request->query('search', '');
 
         try {
-            // 2. Вызываем Service Layer для получения, преобразования и кэширования данных
-            $items = $this->osdrService->getFlattenedOsdrList($limit);
-            
-            // 3. Возвращаем View
+            $allItems = $this->osdrService->getFlattenedOsdrList(); // без лимита, т.к. фильтруем сами
+
+            // Фильтр поиска
+            if ($search) {
+                $allItems = array_filter($allItems, fn($row) =>
+                    str_contains(strtolower($row['title'] ?? ''), strtolower($search)) ||
+                    str_contains(strtolower($row['dataset_id'] ?? ''), strtolower($search))
+                );
+            }
+
+            $total = count($allItems);
+            $items = array_slice($allItems, ($page-1)*$limit, $limit);
+
+            // Возвращаем JSON для AJAX
+            if ($request->ajax()) {
+                return response()->json([
+                    'items' => array_values($items),
+                    'page' => $page,
+                    'totalPages' => ceil($total / $limit),
+                    'total' => $total,
+                    'perPage' => $limit,
+                ]);
+            }
+
+            // Для обычного рендера страницы
             return view('osdr', [
-                'items' => $items,
-                // Здесь мы можем использовать ENV переменную, но лучше передавать ее через Service
-                // Для упрощения примера оставим так, как было:
+                'items' => array_values($items),
+                'page' => $page,
+                'totalPages' => ceil($total / $limit),
+                'limit' => $limit,
                 'src' => (getenv('RUST_BASE') ?: 'http://rust_iss:3000') . '/osdr/list?limit=' . $limit,
             ]);
-            
+
         } catch (\Exception $e) {
-            // Если Service бросил исключение, оно будет поймано в Handler (app/Exceptions/Handler.php)
-            // Здесь можно просто вернуть View с сообщением об ошибке или пробросить исключение
             throw $e;
         }
     }

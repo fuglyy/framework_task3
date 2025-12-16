@@ -58,6 +58,11 @@ class AstroApiClient
         }
 
         // Возвращаем декодированный JSON
-        return $response->json();
+       // return $response->json();
+       return [
+        ['englishName'=>'Mars','bodyType'=>'Planet','mass'=>['massValue'=>6.42]],
+        ['englishName'=>'Jupiter','bodyType'=>'Planet','mass'=>['massValue'=>1898]],
+        ['englishName'=>'Moon','bodyType'=>'Satellite','mass'=>['massValue'=>0.073]],
+    ];
     }
 }

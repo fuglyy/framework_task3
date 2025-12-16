@@ -26,7 +26,8 @@ class CmsController extends Controller
             $data = $this->cmsService->getPageData($slug);
             
             // 2. Успешный возврат представления с готовыми данными.
-            return response()->view('cms.page', $data);
+            return view('cms.page', $data);
+
             
         } catch (Exception $e) {
             // 3. Обработка ошибки "страница не найдена", проброшенной из Service.

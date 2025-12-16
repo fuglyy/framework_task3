@@ -77,7 +77,7 @@ class RustIssClient
     /**
      * Получает последние данные о МКС.
      */
-    public function getIssLatest(): array
+    public function getLast(): array
     {
         return $this->getJson('/last');
     }
@@ -85,8 +85,8 @@ class RustIssClient
     /**
      * Получает данные тренда МКС (фронт заберет сам, но оставляем заготовку).
      */
-    public function getIssTrend(array $params = []): array
+    public function getTrend(array $params = []): array
     {
-        return $this->getJson('/api/iss/trend', $params);
+        return $this->getJson('trend', $params);
     }
 }

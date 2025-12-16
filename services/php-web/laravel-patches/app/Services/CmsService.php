@@ -31,15 +31,12 @@ class CmsService
         $page = $this->cmsRepository->getActivePageBySlug($slug);
 
         if (!$page) {
-            // В сервисе лучше бросать исключение, а не вызывать abort() напрямую.
-            // Контроллер или Middleware должны перехватить его и вызвать abort(404).
             throw new Exception('CMS page not found.', 404);
         }
 
-        // Маппинг и подготовка данных (ViewModel)
         return [
-            'title' => $page->title,
-            'html' => $page->content, // Мы не выполняем дополнительную обработку (например, Markdown->HTML)
+            'content' => $page->content
         ];
     }
+
 }

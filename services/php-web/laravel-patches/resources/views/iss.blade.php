@@ -6,21 +6,23 @@
 
   <div class="row g-3">
     <div class="col-md-6">
-      <div class="card shadow-sm">
+      <div class="card shadow-sm fade-in">
         <div class="card-body">
           <h5 class="card-title">Последний снимок</h5>
           @if(!empty($last['payload']))
             <ul class="list-group">
-              <li class="list-group-item">Широта {{ $last['payload']['latitude'] ?? '—' }}</li>
-              <li class="list-group-item">Долгота {{ $last['payload']['longitude'] ?? '—' }}</li>
-              <li class="list-group-item">Высота км {{ $last['payload']['altitude'] ?? '—' }}</li>
-              <li class="list-group-item">Скорость км/ч {{ $last['payload']['velocity'] ?? '—' }}</li>
-              <li class="list-group-item">Время {{ $last['fetched_at'] ?? '—' }}</li>
+              <li class="list-group-item d-flex justify-content-between">Широта {{ $last['payload']['latitude'] ?? '—' }}</li>
+              <li class="list-group-item d-flex justify-content-between">Долгота {{ $last['payload']['longitude'] ?? '—' }}</li>
+              <li class="list-group-item d-flex justify-content-between">Высота км {{ $last['payload']['altitude'] ?? '—' }}</li>
+              <li class="list-group-item d-flex justify-content-between">Скорость км/ч {{ $last['payload']['velocity'] ?? '—' }}</li>
+              <li class="list-group-item d-flex justify-content-between">Время {{ $last['fetched_at'] ?? '—' }}</li>
             </ul>
           @else
             <div class="text-muted">нет данных</div>
           @endif
-          <div class="mt-3"><code>{{ $base }}/last</code></div>
+          <div class="mt-3">
+            <div id="map" style="height: 400px; width: 100%;"></div>
+          </div>
         </div>
       </div>
     </div>
@@ -39,7 +41,6 @@
           @else
             <div class="text-muted">нет данных</div>
           @endif
-          <div class="mt-3"><code>{{ $base }}/iss/trend</code></div>
           <div class="mt-3"><a class="btn btn-outline-primary" href="/osdr">Перейти к OSDR</a></div>
         </div>
       </div>
@@ -47,3 +48,47 @@
   </div>
 </div>
 @endsection
+
+<script>
+document.addEventListener('DOMContentLoaded', async function () {
+  // ====== карта и графики МКС (как раньше) ======
+  if (typeof L !== 'undefined' && typeof Chart !== 'undefined') {
+    const last = @json(($iss['payload'] ?? []));
+    let lat0 = Number(last.latitude || 0), lon0 = Number(last.longitude || 0);
+    const map = L.map('map', { attributionControl:false }).setView([lat0||0, lon0||0], lat0?3:2);
+    L.tileLayer('https://{s}.tile.openstreetmap.de/{z}/{x}/{y}.png', { noWrap:true }).addTo(map);
+    const trail  = L.polyline([], {weight:3}).addTo(map);
+    const marker = L.marker([lat0||0, lon0||0]).addTo(map).bindPopup('МКС');
+
+    const speedChart = new Chart(document.getElementById('issSpeedChart'), {
+      type: 'line', data: { labels: [], datasets: [{ label: 'Скорость', data: [] }] },
+      options: { responsive: true, scales: { x: { display: false } } }
+    });
+    const altChart = new Chart(document.getElementById('issAltChart'), {
+      type: 'line', data: { labels: [], datasets: [{ label: 'Высота', data: [] }] },
+      options: { responsive: true, scales: { x: { display: false } } }
+    });
+
+    async function loadTrend() {
+      try {
+        const r = await fetch('/api/iss/trend?limit=240');
+        const js = await r.json();
+        const pts = Array.isArray(js.points) ? js.points.map(p => [p.lat, p.lon]) : [];
+        if (pts.length) {
+          trail.setLatLngs(pts);
+          marker.setLatLng(pts[pts.length-1]);
+        }
+        const t = (js.points||[]).map(p => new Date(p.at).toLocaleTimeString());
+        speedChart.data.labels = t;
+        speedChart.data.datasets[0].data = (js.points||[]).map(p => p.velocity);
+        speedChart.update();
+        altChart.data.labels = t;
+        altChart.data.datasets[0].data = (js.points||[]).map(p => p.altitude);
+        altChart.update();
+      } catch(e) {}
+    }
+    loadTrend();
+    setInterval(loadTrend, 15000);
+  }
+});
+</script>

@@ -6,6 +6,8 @@
   <div class="small text-muted mb-2">Источник {{ $src }}</div>
 
   <div class="table-responsive">
+    <input id="search" class="form-control mb-2" placeholder="Поиск по title / dataset_id">
+
     <table class="table table-sm table-striped align-middle">
       <thead>
         <tr>
@@ -49,4 +51,15 @@
     </table>
   </div>
 </div>
+<script>
+const rows = [...document.querySelectorAll('tbody tr')];
+
+document.getElementById('search').addEventListener('input', e => {
+  const q = e.target.value.toLowerCase();
+  rows.forEach(r => {
+    r.style.display = r.innerText.toLowerCase().includes(q) ? '' : 'none';
+  });
+});
+</script>
+
 @endsection
